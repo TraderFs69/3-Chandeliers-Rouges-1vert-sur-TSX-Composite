@@ -3,3 +3,6 @@ pandas
 yfinance
 plotly
 requests
+lxml
+html5lib
+
