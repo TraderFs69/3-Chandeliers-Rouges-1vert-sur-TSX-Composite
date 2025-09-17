@@ -9,55 +9,100 @@ st.set_page_config(page_title="TSX — 3 Chandeliers (Rouges x3 + Vert)", layout
 st.title("🇨🇦 S&P/TSX Composite — Détection 3 Rouges puis 1 Vert (Heikin-Ashi)")
 
 # ---------- Tickeurs TSX ----------
-@st.cache_data(ttl=24*60*60)  # 24h
+@st.cache_data(ttl=24*60*60)
 def get_tsx_composite_tickers() -> list[str]:
     """
-    Récupère la liste S&P/TSX Composite depuis Wikipédia et normalise pour yfinance.
-    Ex.: 'BCE' -> 'BCE.TO', 'XRE.UN' -> 'XRE-UN.TO', 'DOL.U' -> 'DOL-U.TO'
+    Essaie successivement :
+      1) Wikipédia EN: S&P/TSX Composite
+      2) Wikipédia FR: Indice composé S&P/TSX
+      3) Repli: S&P/TSX 60 (plus petit mais fiable)
+    Normalise pour yfinance: .TO ; .UN -> -UN ; .U -> -U
     """
-    wiki_url = "https://en.wikipedia.org/wiki/S%26P/TSX_Composite_Index"
+    session = requests.Session()
     headers = {
         "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+                       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"),
+        "Accept-Language": "en,fr;q=0.9",
+        "Cache-Control": "no-cache",
     }
+
+    sources = [
+        # S&P/TSX Composite (EN)
+        ("https://en.wikipedia.org/wiki/S%26P/TSX_Composite_Index", {"match_cols": {"symbol", "ticker"}}),
+        # S&P/TSX Composite (FR)
+        ("https://fr.wikipedia.org/wiki/Indice_compos%C3%A9_S%26P/TSX", {"match_cols": {"symbole", "ticker", "symbol"}}),
+    ]
+
+    def _normalize_tsx(symbols: list[str]) -> list[str]:
+        out = []
+        for s in symbols:
+            s = str(s).strip().upper().replace(" ", "")
+            if not s or s in {"NAN", "NONE"}:
+                continue
+            # variations fréquentes
+            s = s.replace(".UN", "-UN").replace(".U", "-U")
+            if not s.endswith(".TO"):
+                s = f"{s}.TO"
+            # filtre basique (évite les entrées bizarres)
+            if re.fullmatch(r"[A-Z0-9\-\.]{1,8}\.TO", s):
+                out.append(s)
+        return sorted(set(out))
+
+    # Petit helper pour lire un HTML avec retries
+    def _read_wiki(url: str, tries: int = 3, delay: float = 1.0) -> list[str] | None:
+        for attempt in range(1, tries + 1):
+            try:
+                resp = session.get(url, headers=headers, timeout=20)
+                resp.raise_for_status()
+                tables = pd.read_html(resp.text)
+                # Trouve une table avec une colonne qui matche
+                for t in tables:
+                    cols = [str(c).strip().lower() for c in t.columns]
+                    if any(c in cols for c in ["symbol", "ticker", "symbole", "ticker symbol"]):
+                        # Choisit le bon nom de colonne
+                        for cand in ["Symbol", "Ticker", "Symbole", "Ticker symbol"]:
+                            if cand in t.columns:
+                                syms = t[cand].dropna().astype(str).tolist()
+                                norm = _normalize_tsx(syms)
+                                if len(norm) >= 50:
+                                    return norm
+                # Si pas trouvé, on continue (structure différente)
+                time.sleep(delay)
+            except Exception as e:
+                print(f"[get_tsx_composite_tickers] wiki fetch fail ({url}) attempt {attempt}: {e}")
+                time.sleep(delay)
+        return None
+
+    # 1) 2) Wikipedia (EN/FR)
+    for url, _meta in sources:
+        res = _read_wiki(url)
+        if res and len(res) >= 50:
+            return res
+
+    # 3) Repli: S&P/TSX 60 (plus petit univers, souvent suffisant pour un scan rapide)
     try:
-        resp = requests.get(wiki_url, headers=headers, timeout=20)
+        url_tsx60 = "https://en.wikipedia.org/wiki/S%26P/TSX_60"
+        resp = session.get(url_tsx60, headers=headers, timeout=20)
         resp.raise_for_status()
         tables = pd.read_html(resp.text)
-        # Cherche la table qui contient une colonne 'Symbol' ou 'Ticker'
-        table = next(t for t in tables if any(c.lower() in {"symbol", "ticker"} for c in t.columns.astype(str).str.lower()))
-        # Trouve le nom réel de la colonne
-        col = [c for c in table.columns if str(c).lower() in {"symbol", "ticker"}][0]
-        syms = (
-            table[col]
-            .astype(str)
-            .str.strip()
-            .dropna()
-            .tolist()
-        )
+        # Cherche une colonne Symbol/Ticker
+        cand_cols = {"symbol", "ticker", "ticker symbol"}
+        for t in tables:
+            cols = [str(c).strip().lower() for c in t.columns]
+            if any(c in cols for c in cand_cols):
+                for cand in ["Symbol", "Ticker", "Ticker symbol"]:
+                    if cand in t.columns:
+                        syms = t[cand].dropna().astype(str).tolist()
+                        norm = _normalize_tsx(syms)
+                        if len(norm) >= 40:  # TSX60 ~60 titres; tolère si un peu moins
+                            st.info("Liste TSX Composite indisponible — utilisation du TSX 60 comme repli.")
+                            return norm
     except Exception as e:
-        print(f"[get_tsx_composite_tickers] Wikipedia fetch failed: {e}")
-        st.warning("Impossible de récupérer la liste S&P/TSX Composite en ligne. Utilisation d’un échantillon minimal.")
-        return ["RY.TO", "TD.TO", "BNS.TO", "ENB.TO", "CNQ.TO", "SU.TO", "SHOP.TO", "BCE.TO"]
+        print(f"[get_tsx_composite_tickers] TSX60 fetch fail: {e}")
 
-    norm = []
-    for s in syms:
-        s = s.upper().replace(" ", "")
-        # Cas spéciaux TSX: parts de fiducie / classes cotées
-        if s.endswith(".UN"):
-            s = s.replace(".UN", "-UN")  # XRE.UN -> XRE-UN
-        elif s.endswith(".U"):
-            s = s.replace(".U", "-U")    # DOL.U -> DOL-U
-        # Ajoute suffixe yfinance
-        if not s.endswith(".TO"):
-            s = f"{s}.TO"
-        # Filtre simple
-        if 3 <= len(s) <= 12 and s.endswith(".TO"):
-            norm.append(s)
-    # Unicité
-    norm = sorted(set(norm))
-    # Petit garde-fou
-    return norm if len(norm) >= 50 else ["RY.TO", "TD.TO", "BNS.TO", "ENB.TO", "CNQ.TO", "SU.TO", "SHOP.TO", "BCE.TO"]
+    # 4) Dernier recours: échantillon minimal pour ne pas planter
+    st.warning("Impossible de récupérer la liste S&P/TSX Composite en ligne. Utilisation d’un échantillon minimal.")
+    return ["RY.TO", "TD.TO", "BNS.TO", "ENB.TO", "CNQ.TO", "SU.TO", "SHOP.TO", "BCE.TO"]
 
 # ---------- Données Marché ----------
 @st.cache_data
