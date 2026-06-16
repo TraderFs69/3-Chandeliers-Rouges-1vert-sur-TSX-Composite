@@ -24,4 +24,4 @@ jobs:
       - name: Run scanner
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python run_tsx_scanner.discord.py
+        run: python run_tsx_scanner_discord.py
