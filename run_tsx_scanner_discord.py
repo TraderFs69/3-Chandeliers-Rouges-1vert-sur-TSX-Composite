@@ -21,7 +21,7 @@ WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 # --------------------------------------------------
 
 def normalize_tsx(symbols):
-out = []
+    out = []
 
 
 for s in symbols:
