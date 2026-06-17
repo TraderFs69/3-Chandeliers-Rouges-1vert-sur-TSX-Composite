@@ -23,25 +23,24 @@ WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 def normalize_tsx(symbols):
     out = []
 
+    for s in symbols:
+        s = str(s).strip().upper().replace(" ", "")
 
-for s in symbols:
-    s = str(s).strip().upper().replace(" ", "")
+        if not s or s in {"NAN", "NONE"}:
+            continue
 
-    if not s or s in {"NAN", "NONE"}:
-        continue
+        s = re.sub(r"^[A-Z]+:", "", s)
+        s = re.sub(r"[:\.](CN|XTSE|TSE)$", "", s)
 
-    s = re.sub(r"^[A-Z]+:", "", s)
-    s = re.sub(r"[:\.](CN|XTSE|TSE)$", "", s)
+        s = s.replace(".UN", "-UN")
+        s = s.replace(".U", "-U")
 
-    s = s.replace(".UN", "-UN")
-    s = s.replace(".U", "-U")
+        if not s.endswith(".TO"):
+            s += ".TO"
 
-    if not s.endswith(".TO"):
-        s += ".TO"
+        out.append(s)
 
-    out.append(s)
-
-return sorted(set(out))
+    return sorted(set(out))
 
 def get_xic_holdings():
 
