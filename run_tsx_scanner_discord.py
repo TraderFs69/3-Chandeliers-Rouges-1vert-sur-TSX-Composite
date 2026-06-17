@@ -23,7 +23,7 @@ WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 def normalize_tsx(symbols):
 out = []
 
-```
+
 for s in symbols:
     s = str(s).strip().upper().replace(" ", "")
 
@@ -42,11 +42,10 @@ for s in symbols:
     out.append(s)
 
 return sorted(set(out))
-```
 
 def get_xic_holdings():
 
-```
+
 url = (
     "https://www.blackrock.com/ca/investors/en/products/239837/"
     "ishares-sptsx-capped-composite-index-etf/1464253357814.ajax"
@@ -108,11 +107,11 @@ except Exception as e:
         "SU.TO","ENB.TO","TRP.TO","SHOP.TO",
         "CP.TO","CNR.TO","ATD.TO","WSP.TO"
     ]
-```
+
 
 def download_data(ticker):
 
-```
+
 try:
 
     df = yf.download(
@@ -135,11 +134,11 @@ except Exception as e:
 
     print(f"{ticker}: {e}")
     return None
-```
+
 
 def compute_heikin_ashi(df):
 
-```
+
 ha = pd.DataFrame(index=df.index)
 
 ha["Close"] = (
@@ -161,11 +160,11 @@ for i in range(1, len(df)):
 ha["Open"] = ha_open
 
 return ha
-```
+
 
 def match_pattern(ha):
 
-```
+
 if len(ha) < 4:
     return False
 
@@ -177,7 +176,7 @@ return (
     and green["Close"] > green["Open"]
     and green["Close"] > reds.iloc[-1]["Close"]
 )
-```
+
 
 # --------------------------------------------------
 
@@ -195,7 +194,7 @@ detected = []
 
 for i, ticker in enumerate(tickers):
 
-```
+
 print(f"{i+1}/{len(tickers)} {ticker}")
 
 df = download_data(ticker)
@@ -207,7 +206,7 @@ ha = compute_heikin_ashi(df)
 
 if match_pattern(ha):
     detected.append(ticker)
-```
+
 
 # --------------------------------------------------
 
@@ -217,39 +216,39 @@ if match_pattern(ha):
 
 if detected:
 
-```
+
 message = (
     "🇨🇦 **TSX Scanner Heikin Ashi**\n\n"
     "Pattern : 🔴🔴🔴🟢\n\n"
     f"Signaux détectés : **{len(detected)}**\n\n"
     + "\n".join(f"• {x}" for x in detected[:50])
 )
-```
+
 
 else:
 
-```
+
 message = (
     "🇨🇦 **TSX Scanner Heikin Ashi**\n\n"
     "Aucun signal détecté aujourd'hui."
 )
-```
+
 
 print(message)
 
 if WEBHOOK_URL:
 
-```
+
 r = requests.post(
     WEBHOOK_URL,
     json={"content": message}
 )
 
 print("Discord status:", r.status_code)
-```
+
 
 else:
 
-```
+
 print("DISCORD_WEBHOOK_URL absent")
-```
+
